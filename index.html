@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title></title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css"> 
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet"> 
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v1.3.1/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v1.3.1/mapbox-gl.css' rel='stylesheet' />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+
+      .marker { 
+          background-image: url('mapbox-icon.png'); 
+          background-size: cover; 
+          width: 50px; 
+          height: 50px; 
+          border-radius: 50%; 
+          cursor: pointer; 
+          visibility: visible; 
+      } 
+
+      .hidden {
+          visibility: hidden; 
+      } 
+
+      .mapboxgl-popup { 
+          max-width: 200px; 
+      } 
+
+      .mapboxgl-popup-content { 
+          text-align: center; 
+          font-family: 'Open Sans', sans-serif
+      }
+
+      .filter-ctrl {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1;
+        width: 180px;
+    } 
+
+    .filter-ctrl input[type=text] {
+            font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            width: 100%;
+            border: 0;
+            background-color: #fff;
+            height: 20px;
+            margin: 0;
+            color: rgba(0,0,0,.5);
+            padding: 10px;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+            border-radius: 3px;
+        } 
+
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="filter-ctrl">
+        <input id="filter-input" type="text" name="filter" placeholder="Filter by name" />
+        <button id="fly-to-button"> 
+            <i class="fa fa-plane" aria-hidden="true"></i>
+        </button> 
+    </div>
+
+    <script src='https://unpkg.com/es6-promise@4.2.4/dist/es6-promise.auto.min.js'></script>
+    <script src="https://unpkg.com/@mapbox/mapbox-sdk/umd/mapbox-sdk.min.js"></script>
+    <script>
+        
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYmgwIiwiYSI6ImNqcHk3aW4wMzBudDU0MnVqaGQyNjlsdTUifQ.Q85iI_ipl5Df-Cxl4BCn2Q'; 
+        
+        let map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v10',
+            center: [15, 54],
+            zoom: 3, 
+            logoPosition: "top-left"
+        });
+        
+        let geojson = {
+            type: "FeatureCollection", 
+            features: []
+        }; 
+
+        let places = [
+            { 
+                placename: "Prague, Czech Republic", // this is for the Forward Geocoder 
+                reason: "I hear its very clean" 
+            }, 
+            {
+                placename: "Berlin, Germany", 
+                reason: "I am fascinated to its Cold War relevance"
+            }, 
+            {
+                placename: "Paris, France", 
+                reason: "I am sure I'll think of something"
+            }
+        ]; 
+
+        let mapboxClient = mapboxSdk({ accessToken: mapboxgl.accessToken });
+
+        places.forEach(place => {
+            mapboxClient.geocoding.forwardGeocode({
+                        query: place.placename,
+                        autocomplete: false,
+                        limit: 1 
+                })
+                .send()
+                .then(response => {
+                    if (response && response.body && response.body.features && response.body.features.length) {
+                        let features = response.body.features; 
+                
+                        features.forEach(feature => { 
+                            geojson.features.push({
+                                type: "Feature", 
+                                properties: { 
+                                    icon: place.icon 
+                                }, 
+                                geometry: {
+                                    type: "Point", 
+                                    coordinates: feature.center
+                                }, 
+                                placename: feature.place_name, 
+                                reason: place.reason
+                            });  
+                        }); 
+                    }
+                }); 
+            }); 
+    
+        let layerIDs = []; 
+        let filterInput = document.querySelector("#filter-input"); 
+
+        document.getElementById('fly-to-button').addEventListener('click', () => {
+            let location = document.querySelector("#filter-input").value; 
+            geojson.features.forEach(place => { 
+                if (place.placename == location) { 
+                    map.flyTo({
+                        center: place.geometry.coordinates, 
+                        speed: 0.2
+                    });
+                } 
+            }); 
+        }); 
+
+        map.on("load", () => { 
+            map.addSource('custom', {
+                type: 'geojson', 
+                data: geojson 
+            }); 
+
+            geojson.features.forEach(feature => { 
+                let el = document.createElement("div"); 
+                el.className = "marker"; 
+                el.id = feature.placename; 
+
+                new mapboxgl.Marker(el)
+                    .setLngLat(feature.geometry.coordinates)
+                    .setPopup(
+                            new mapboxgl.Popup({ offset: 30})
+                                .setHTML(`<div class="popup-text" id="popup-text-${feature.placename}">
+                                    <b>I want to visit ${feature.placename} because ${feature.reason}</b></div`))
+                    .addTo(map);                
+            }); 
+
+            filterInput.addEventListener('keyup', e => {
+                let value = e.target.value; 
+
+                geojson.features.forEach(feature => { 
+                    if (!feature.placename.includes(value)) { 
+                        document.getElementById(`${feature.placename}`).classList.add("hidden"); 
+                    } 
+                }); 
+                geojson.features.forEach(feature => { 
+                    if (feature.placename.includes(value)) { 
+                        document.getElementById(`${feature.placename}`).classList.remove("hidden"); 
+                    } 
+                });                 
+            });
+        }); 
+
+    </script>
+</body>
+</html>
